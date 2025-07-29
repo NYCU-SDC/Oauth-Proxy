@@ -1,0 +1,203 @@
+package main
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
+)
+
+// OauthBaseUrl is the base URL for the OAuth callback.
+const OauthBaseUrl = "/auth/google/callback"
+
+func main() {
+	// Add basic logging
+	log.SetPrefix("[oauth-proxy] ")
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	
+	// Validate required environment variables
+	clientID := os.Getenv("GOOGLE_OAUTH_CLIENT_ID")
+	clientSecret := os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET")
+	redirectURL := os.Getenv("OAUTH_REDIRECT_URL")
+	
+	if clientID == "" {
+		log.Fatal("GOOGLE_OAUTH_CLIENT_ID environment variable is required")
+	}
+	if clientSecret == "" {
+		log.Fatal("GOOGLE_OAUTH_CLIENT_SECRET environment variable is required")
+	}
+	if redirectURL == "" {
+		log.Fatal("OAUTH_REDIRECT_URL environment variable is required")
+	}
+	
+	log.Printf("OAuth configuration loaded successfully")
+	log.Printf("Redirect URL: %s", redirectURL)
+	
+	http.HandleFunc(OauthBaseUrl, handleCallback)
+	http.HandleFunc("/health", healthCheck)
+	
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	
+	log.Printf("Starting OAuth proxy server on port %s", port)
+	log.Printf("Callback endpoint: %s", OauthBaseUrl)
+	
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		log.Fatalf("Error starting server: %v", err)
+	}
+}
+
+func healthCheck(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, `{"status":"ok","service":"oauth-proxy"}`)
+}
+
+func handleCallback(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Received OAuth callback from %s", r.RemoteAddr)
+	
+	// Extract state and code from the query parameters
+	state := r.URL.Query().Get("state")
+	code := r.URL.Query().Get("code")
+	errorParam := r.URL.Query().Get("error")
+
+	if state == "" {
+		log.Printf("Error: State parameter is missing")
+		http.Error(w, "State parameter is missing", http.StatusBadRequest)
+		return
+	}
+
+	// Decode the state to get the callback URL
+	callbackURL, err := base64.StdEncoding.DecodeString(state)
+	if err != nil {
+		log.Printf("Error: Invalid state parameter: %v", err)
+		http.Error(w, "Invalid state parameter", http.StatusBadRequest)
+		return
+	}
+
+	destURL, err := url.Parse(string(callbackURL))
+	if err != nil {
+		log.Printf("Error: Invalid callback URL in state: %v", err)
+		http.Error(w, "Invalid callback URL in state", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Callback destination: %s", destURL.String())
+
+	// If there's an OAuth error, forward it to the backend
+	if errorParam != "" {
+		log.Printf("OAuth error received: %s, forwarding to backend", errorParam)
+		query := destURL.Query()
+		query.Add("error", errorParam)
+		destURL.RawQuery = query.Encode()
+		http.Redirect(w, r, destURL.String(), http.StatusTemporaryRedirect)
+		return
+	}
+
+	if code == "" {
+		log.Printf("Error: Authorization code is missing")
+		http.Error(w, "Authorization code is missing", http.StatusBadRequest)
+		return
+	}
+
+	// Get OAuth configuration from environment variables
+	clientID := os.Getenv("GOOGLE_OAUTH_CLIENT_ID")
+	clientSecret := os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET")
+	redirectURL := os.Getenv("OAUTH_REDIRECT_URL") // This should be the oauth-proxy URL
+
+	if clientID == "" || clientSecret == "" {
+		http.Error(w, "OAuth configuration not found", http.StatusInternalServerError)
+		return
+	}
+
+	// Configure OAuth2
+	oauthConfig := &oauth2.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		RedirectURL:  redirectURL,
+		Scopes: []string{
+			"openid",
+			"https://www.googleapis.com/auth/userinfo.email",
+			"https://www.googleapis.com/auth/userinfo.profile",
+		},
+		Endpoint: google.Endpoint,
+	}
+
+	log.Printf("Exchanging authorization code for tokens")
+	
+	// Exchange the authorization code for tokens
+	token, err := oauthConfig.Exchange(r.Context(), code)
+	if err != nil {
+		log.Printf("Error: Failed to exchange code for token: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to exchange code for token: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Token exchange successful, fetching user info")
+	
+	// Get user info from Google
+	client := oauthConfig.Client(r.Context(), token)
+	resp, err := client.Get("https://www.googleapis.com/oauth2/v3/userinfo")
+	if err != nil {
+		log.Printf("Error: Failed to get user info: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to get user info: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Error: Failed to read user info: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to read user info: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	var userInfo map[string]interface{}
+	if err := json.Unmarshal(body, &userInfo); err != nil {
+		log.Printf("Error: Failed to parse user info: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to parse user info: %v", err), http.StatusInternalServerError)
+		return
+	}
+	
+	// Log user info (without sensitive data)
+	if email, ok := userInfo["email"].(string); ok {
+		log.Printf("Successfully obtained user info for email: %s", email)
+	}
+
+	// Prepare the data to send to the backend
+	tokenData := map[string]interface{}{
+		"access_token":  token.AccessToken,
+		"refresh_token": token.RefreshToken,
+		"id_token":      token.Extra("id_token"),
+		"token_type":    token.TokenType,
+		"expiry":        token.Expiry,
+		"user_info":     userInfo,
+	}
+
+	tokenJSON, err := json.Marshal(tokenData)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to marshal token data: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Encode the token data as base64 for URL safety
+	tokenParam := base64.StdEncoding.EncodeToString(tokenJSON)
+
+	// Add token data and original state to the callback URL
+	query := destURL.Query()
+	query.Add("token", tokenParam)
+	query.Add("state", state)
+	destURL.RawQuery = query.Encode()
+
+	// Redirect back to the backend server with the token
+	http.Redirect(w, r, destURL.String(), http.StatusTemporaryRedirect)
+}
