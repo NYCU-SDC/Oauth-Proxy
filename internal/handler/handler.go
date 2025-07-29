@@ -2,24 +2,19 @@ package handler
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
-
-	"oauth-proxy/internal/oauth"
 )
 
 type Handler struct {
-	oauthService *oauth.Service
-	logger       *log.Logger
+	logger *log.Logger
 }
 
-func New(oauthService *oauth.Service, logger *log.Logger) *Handler {
+func New(logger *log.Logger) *Handler {
 	return &Handler{
-		oauthService: oauthService,
-		logger:       logger,
+		logger: logger,
 	}
 }
 
@@ -47,25 +42,20 @@ func (h *Handler) DebugCallback(w http.ResponseWriter, r *http.Request) {
 	"query_params": %v,
 	"headers": %v
 }`, 
-		r.URL.String(), r.Method, r.URL.Query(), r.Header)
+	r.URL.String(), r.Method, r.URL.Query(), r.Header)
 }
 
 // HandleCallback processes the OAuth callback from Google
 func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	h.logger.Printf("Received OAuth callback from %s", r.RemoteAddr)
-	h.logger.Printf("Full callback URL: %s", r.URL.String())
-	h.logger.Printf("Request method: %s", r.Method)
-
-	// Log all query parameters for debugging
-	allParams := r.URL.Query()
-	h.logger.Printf("All query parameters: %v", allParams)
+	h.logger.Printf("Full callback URL: %s", r.URL.String()) 
 
 	// Extract parameters from query
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
 	oauthError := r.URL.Query().Get("error")
 
-	h.logger.Printf("Extracted parameters - code: %s, state: %s, error: %s", 
+	h.logger.Printf("Extracted parameters - code: %s, state: %s, error: %s",
 		maskSensitiveData(code), state, oauthError)
 
 	// Validate state parameter
@@ -95,56 +85,36 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Handle OAuth errors
 	if oauthError != "" {
 		h.logger.Printf("OAuth error received: %s, forwarding to backend", oauthError)
-		h.redirectWithError(w, r, callback, oauthError, state)
+		h.redirectWithError(w, r, callback, oauthError)
 		return
 	}
 
-	// Exchange code for token and user info
-	h.logger.Printf("Exchanging authorization code for tokens")
-	tokenData, err := h.oauthService.ExchangeCodeForToken(r.Context(), code)
-	if err != nil {
-		h.logger.Printf("Error: %v", err)
-		h.redirectWithError(w, r, callback, "failed_to_exchange_code", state)
+	// If there is no error, the code should be present
+	if code == "" {
+		h.logger.Printf("Error: Code parameter is missing")
+		h.redirectWithError(w, r, callback, "code_missing")
 		return
 	}
 
-	// Log success (without sensitive data)
-	if email, ok := tokenData.UserInfo["email"].(string); ok {
-		h.logger.Printf("Successfully obtained user info for email: %s", email)
-	}
-
-	// Encode token data as base64 for URL safety
-	tokenJSON, err := json.Marshal(tokenData)
-	if err != nil {
-		h.logger.Printf("Error: Failed to marshal token data: %v", err)
-		h.redirectWithError(w, r, callback, "failed_to_marshal_token_data", state)
-		return
-	}
-
-	h.logger.Printf("Token data: %s", string(tokenJSON))
-	tokenParam := base64.StdEncoding.EncodeToString(tokenJSON)
-
-	// Redirect back to backend with token data
-	h.redirectWithToken(w, r, callback, tokenParam, state)
+	// Redirect back to backend with code data
+	h.redirectWithCode(w, r, callback, code)
 }
 
-func (h *Handler) redirectWithError(w http.ResponseWriter, r *http.Request, callback *url.URL, errorParam, state string) {
+func (h *Handler) redirectWithError(w http.ResponseWriter, r *http.Request, callback *url.URL, errorParam string) {
 	query := callback.Query()
 	query.Add("error", errorParam)
-	query.Add("state", state)
 	callback.RawQuery = query.Encode()
 
 	h.logger.Printf("Redirecting to backend with error: %s", callback.String())
 	http.Redirect(w, r, callback.String(), http.StatusTemporaryRedirect)
 }
 
-func (h *Handler) redirectWithToken(w http.ResponseWriter, r *http.Request, callback *url.URL, tokenParam, state string) {
+func (h *Handler) redirectWithCode(w http.ResponseWriter, r *http.Request, callback *url.URL, codeParam string) {
 	query := callback.Query()
-	query.Add("code", tokenParam)
-	query.Add("state", state)
+	query.Add("code", codeParam)
 	callback.RawQuery = query.Encode()
 
-	h.logger.Printf("Redirecting to backend with token data")
+	h.logger.Printf("Redirecting to backend with code data")
 	http.Redirect(w, r, callback.String(), http.StatusTemporaryRedirect)
 }
 

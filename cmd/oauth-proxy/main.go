@@ -11,7 +11,6 @@ import (
 
 	"oauth-proxy/internal/config"
 	"oauth-proxy/internal/handler"
-	"oauth-proxy/internal/oauth"
 )
 
 func main() {
@@ -27,15 +26,8 @@ func main() {
 	logger.Printf("OAuth Proxy starting on port %s", cfg.Port)
 	logger.Printf("Redirect URL: %s", cfg.OAuthRedirectURL)
 
-	// Initialize OAuth service
-	oauthService := oauth.NewService(
-		cfg.GoogleOAuthClientID,
-		cfg.GoogleOAuthSecret,
-		cfg.OAuthRedirectURL,
-	)
-
 	// Initialize handlers
-	h := handler.New(oauthService, logger)
+	h := handler.New(logger)
 
 	// Setup HTTP server
 	mux := http.NewServeMux()
