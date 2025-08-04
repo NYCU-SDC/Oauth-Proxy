@@ -8,17 +8,14 @@ import (
 )
 
 var (
-	ErrMissingClientID     = errors.New("GOOGLE_OAUTH_CLIENT_ID is required")
-	ErrMissingClientSecret = errors.New("GOOGLE_OAUTH_CLIENT_SECRET is required")
-	ErrMissingRedirectURL  = errors.New("OAUTH_REDIRECT_URL is required")
+	ErrMissingToken = errors.New("TOKEN is required")
 )
 
 type Config struct {
-	Port                 string
-	GoogleOAuthClientID  string
-	GoogleOAuthSecret    string
-	OAuthRedirectURL     string
-	Debug                bool
+	Token            string
+	Port             string
+	OAuthRedirectURL string
+	Debug            bool
 }
 
 func Load() (*Config, error) {
@@ -28,11 +25,10 @@ func Load() (*Config, error) {
 	}
 
 	config := &Config{
-		Port:                 getEnv("PORT", "8081"),
-		GoogleOAuthClientID:  os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
-		GoogleOAuthSecret:    os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
-		OAuthRedirectURL:     os.Getenv("OAUTH_REDIRECT_URL"),
-		Debug:                getEnv("DEBUG", "false") == "true",
+		Token:            os.Getenv("TOKEN"),
+		Port:             getEnv("PORT", "8081"),
+		OAuthRedirectURL: os.Getenv("OAUTH_REDIRECT_URL"),
+		Debug:            getEnv("DEBUG", "false") == "true",
 	}
 
 	if err := config.Validate(); err != nil {
@@ -43,14 +39,8 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) Validate() error {
-	if c.GoogleOAuthClientID == "" {
-		return ErrMissingClientID
-	}
-	if c.GoogleOAuthSecret == "" {
-		return ErrMissingClientSecret
-	}
-	if c.OAuthRedirectURL == "" {
-		return ErrMissingRedirectURL
+	if c.Token == "" {
+		return ErrMissingToken
 	}
 	return nil
 }

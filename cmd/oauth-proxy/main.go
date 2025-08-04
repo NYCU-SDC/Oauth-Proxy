@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -23,16 +24,12 @@ func main() {
 		logger.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	logger.Printf("OAuth Proxy starting on port %s", cfg.Port)
-	logger.Printf("Redirect URL: %s", cfg.OAuthRedirectURL)
-
 	// Initialize handlers
-	h := handler.New(logger)
+	h := handler.New(cfg.Token, logger)
 
 	// Setup HTTP server
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", h.HealthCheck)
-	mux.HandleFunc("GET /debug", h.DebugCallback)
 	mux.HandleFunc("GET /auth/google/callback", h.HandleCallback)
 
 	server := &http.Server{
@@ -45,8 +42,8 @@ func main() {
 
 	// Start server in a goroutine
 	go func() {
-		logger.Printf("Starting server on :%s", cfg.Port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Printf("Starting server on port %s", cfg.Port)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Fatalf("Failed to start server: %v", err)
 		}
 	}()
