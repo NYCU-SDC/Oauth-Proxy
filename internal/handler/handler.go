@@ -100,7 +100,7 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Redirect back to backend with code data
-	h.redirectWithCode(w, r, callback, jwtClaims.RedirectURL, code)
+	h.redirectWithCode(w, r, callback, state, code)
 }
 
 func (h *Handler) parseJWT(state string) (*claims, error) {
@@ -128,12 +128,12 @@ func (h *Handler) redirectWithError(w http.ResponseWriter, r *http.Request, call
 	http.Redirect(w, r, callback.String(), http.StatusTemporaryRedirect)
 }
 
-func (h *Handler) redirectWithCode(w http.ResponseWriter, r *http.Request, callback *url.URL, redirectParam string, codeParam string) {
+func (h *Handler) redirectWithCode(w http.ResponseWriter, r *http.Request, callback *url.URL, state string, codeParam string) {
 	query := callback.Query()
 	query.Add("code", codeParam)
 
-	if redirectParam != "" {
-		query.Add("redirect", redirectParam)
+	if state != "" {
+		query.Add("state", state)
 	}
 
 	callback.RawQuery = query.Encode()
