@@ -3,7 +3,7 @@ name: Dev Backend
 on:
   push:
     branches:
-      - refactor/change-state-format-from-string-to-jwt
+      - main
 
 jobs:
   Lint:
