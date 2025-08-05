@@ -52,7 +52,6 @@ jobs:
       - name: Build
         run: |
           go mod download
-          make gen
           go build -o bin/backend cmd/oauth-proxy/main.go
 
       - name: Set up Docker Buildx
