@@ -141,14 +141,3 @@ func (h *Handler) redirectWithCode(w http.ResponseWriter, r *http.Request, callb
 	h.logger.Printf("Redirecting to backend with code data")
 	http.Redirect(w, r, callback.String(), http.StatusTemporaryRedirect)
 }
-
-// maskSensitiveData masks sensitive data for logging
-func maskSensitiveData(data string) string {
-	if len(data) == 0 {
-		return "[EMPTY]"
-	}
-	if len(data) <= 8 {
-		return "[REDACTED]"
-	}
-	return data[:4] + "..." + data[len(data)-4:]
-}
