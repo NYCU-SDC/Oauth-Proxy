@@ -4,6 +4,6 @@ WORKDIR /app
 
 COPY bin/backend /app/backend
 
-EXPOSE 8080
+EXPOSE 80
 
 CMD ["/app/backend"]

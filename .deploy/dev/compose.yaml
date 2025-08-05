@@ -6,15 +6,12 @@ services:
     networks:
       - traefik
     environment:
-      PORT: "8080"
+      PORT: "80"
       TOKEN: ${JWT_PROXY_TOKEN}
     labels:
       - "vector.enable=true"
       - "traefik.enable=true"
       - "traefik.http.routers.oauth-proxy-dev.rule=Host(`dev.oauth-proxy.sdc.nycu.club`)"
-      - "traefik.http.routers.oauth-proxy-dev.entrypoints=websecure"
-      - "traefik.http.routers.oauth-proxy-dev.tls=true"
-      - "traefik.http.routers.oauth-proxy-dev.tls.certresolver=cloudflare"
 
 networks:
   traefik:
