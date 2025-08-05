@@ -11,7 +11,7 @@ services:
     labels:
       - "vector.enable=true"
       - "traefik.enable=true"
-      - "traefik.http.routers.oauth-proxy-dev.rule=Host(`dev.oauth-proxy.sdc.nycu.club`)"
+      - "traefik.http.routers.oauth-proxy-dev.rule=Host(`oauth-proxy.eng.sdc.nycu.club`)"
 
 networks:
   traefik:
