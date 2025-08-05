@@ -1,0 +1,34 @@
+type: http_request
+model: http_request
+id: rq_rxQwbLwH6S
+createdAt: 2025-08-04T17:27:54.443993957
+updatedAt: 2025-08-05T04:37:31.559599707
+workspaceId: wk_xopsn8JodC
+folderId: null
+authentication: {}
+authenticationType: null
+body: {}
+bodyType: null
+description: ''
+headers: []
+method: GET
+name: ''
+sortPriority: -1754328474443.0
+url: https://${[ BASE_URL ]}/auth/google/callback
+urlParameters:
+- enabled: true
+  name: code
+  value: test
+  id: DfDiHK6ICn
+- enabled: true
+  name: state
+  value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzZXJ2aWNlIjoiMTIzNDU2Nzg5MCIsImVudmlyb25tZW50IjoiSm9obiBEb2UiLCJjYWxsYmFja1VSTCI6Imh0dHA6Ly9nb29nbGUuY29tIiwicmVkaXJlY3RVUkwiOiJodHRwOi8vZ29vZ2xlLmNvbSIsImlhdCI6MTUxNjIzOTAyMn0.4jx2a1dnGdgN5SKJstDTImOwnyusVHZ9uHrnQN8CqDU
+  id: pTC0eqKD8I
+- enabled: false
+  name: ''
+  value: ''
+  id: E37RTuExcf
+- enabled: true
+  name: ''
+  value: ''
+  id: bzDCHBSS5H

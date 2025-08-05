@@ -1,19 +1,41 @@
 package handler
 
 import (
-	"encoding/base64"
 	"fmt"
+	"github.com/golang-jwt/jwt/v5"
 	"log"
 	"net/http"
 	"net/url"
 )
 
+// claims defines contextual information for an OAuth transaction.
+// It is encoded into the 'state' parameter as a signed JWT to preserve integrity and authenticity.
+type claims struct {
+	// Service is the logical service requesting authentication (e.g., "core-system", "clustron").
+	Service string
+
+	// Environment represents the environment or deployment context (e.g., "pr-12", "staging").
+	Environment string
+
+	// CallbackURL is the backend endpoint to receive the OAuth authorization code.
+	// It must be an internal service endpoint, not exposed to users.
+	CallbackURL string
+
+	// RedirectURL is the final URL to send the user to after authentication completes.
+	// This is typically a user-facing frontend page.
+	RedirectURL string
+
+	jwt.RegisteredClaims
+}
+
 type Handler struct {
+	token  string
 	logger *log.Logger
 }
 
-func New(logger *log.Logger) *Handler {
+func New(token string, logger *log.Logger) *Handler {
 	return &Handler{
+		token:  token,
 		logger: logger,
 	}
 }
@@ -22,41 +44,21 @@ func New(logger *log.Logger) *Handler {
 func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, `{"status":"ok","service":"oauth-proxy"}`)
-}
-
-// DebugCallback logs all parameters for debugging OAuth issues
-func (h *Handler) DebugCallback(w http.ResponseWriter, r *http.Request) {
-	h.logger.Printf("DEBUG: Received request from %s", r.RemoteAddr)
-	h.logger.Printf("DEBUG: Full URL: %s", r.URL.String())
-	h.logger.Printf("DEBUG: Method: %s", r.Method)
-	h.logger.Printf("DEBUG: Headers: %v", r.Header)
-	h.logger.Printf("DEBUG: Query parameters: %v", r.URL.Query())
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{
-	"debug": true,
-	"url": %q,
-	"method": %q,
-	"query_params": %v,
-	"headers": %v
-}`, 
-	r.URL.String(), r.Method, r.URL.Query(), r.Header)
+	_, _ = fmt.Fprint(w, `{"status":"ok","service":"oauth-proxy"}`)
 }
 
 // HandleCallback processes the OAuth callback from Google
 func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	h.logger.Printf("Received OAuth callback from %s", r.RemoteAddr)
-	h.logger.Printf("Full callback URL: %s", r.URL.String()) 
 
 	// Extract parameters from query
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
 	oauthError := r.URL.Query().Get("error")
 
-	h.logger.Printf("Extracted parameters - code: %s, state: %s, error: %s",
-		maskSensitiveData(code), state, oauthError)
+	if oauthError != "" {
+		h.logger.Printf("OAuth error received: %s", oauthError)
+	}
 
 	// Validate state parameter
 	if state == "" {
@@ -66,21 +68,22 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Decode the state to get the callback URL
-	callbackURL, err := base64.StdEncoding.DecodeString(state)
+	jwtClaims, err := h.parseJWT(state)
 	if err != nil {
-		h.logger.Printf("Error: Invalid state parameter: %v", err)
+		h.logger.Printf("Error: Failed to parse JWT from state: %v", err)
 		http.Error(w, "Invalid state parameter", http.StatusBadRequest)
 		return
 	}
 
-	callback, err := url.Parse(string(callbackURL))
+	h.logger.Printf("Processing OAuth proxy for service: %s, environment: %s, callback URL: %s, redirect URL: %s",
+		jwtClaims.Service, jwtClaims.Environment, jwtClaims.CallbackURL, jwtClaims.RedirectURL)
+
+	callback, err := url.Parse(jwtClaims.CallbackURL)
 	if err != nil {
 		h.logger.Printf("Error: Invalid callback URL in state: %v", err)
 		http.Error(w, "Invalid callback URL in state", http.StatusBadRequest)
 		return
 	}
-
-	h.logger.Printf("Callback destination: %s", callback.String())
 
 	// Handle OAuth errors
 	if oauthError != "" {
@@ -97,7 +100,23 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Redirect back to backend with code data
-	h.redirectWithCode(w, r, callback, code)
+	h.redirectWithCode(w, r, callback, state, code)
+}
+
+func (h *Handler) parseJWT(state string) (*claims, error) {
+	var c claims
+	token, err := jwt.ParseWithClaims(state, &c, func(token *jwt.Token) (interface{}, error) {
+		// Validate the signing method
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(h.token), nil
+	})
+	if err != nil || !token.Valid {
+		return nil, fmt.Errorf("invalid JWT token: %w", err)
+	}
+
+	return &c, nil
 }
 
 func (h *Handler) redirectWithError(w http.ResponseWriter, r *http.Request, callback *url.URL, errorParam string) {
@@ -109,22 +128,16 @@ func (h *Handler) redirectWithError(w http.ResponseWriter, r *http.Request, call
 	http.Redirect(w, r, callback.String(), http.StatusTemporaryRedirect)
 }
 
-func (h *Handler) redirectWithCode(w http.ResponseWriter, r *http.Request, callback *url.URL, codeParam string) {
+func (h *Handler) redirectWithCode(w http.ResponseWriter, r *http.Request, callback *url.URL, state string, codeParam string) {
 	query := callback.Query()
 	query.Add("code", codeParam)
+
+	if state != "" {
+		query.Add("state", state)
+	}
+
 	callback.RawQuery = query.Encode()
 
 	h.logger.Printf("Redirecting to backend with code data")
 	http.Redirect(w, r, callback.String(), http.StatusTemporaryRedirect)
-}
-
-// maskSensitiveData masks sensitive data for logging
-func maskSensitiveData(data string) string {
-	if len(data) == 0 {
-		return "[EMPTY]"
-	}
-	if len(data) <= 8 {
-		return "[REDACTED]"
-	}
-	return data[:4] + "..." + data[len(data)-4:]
 }
