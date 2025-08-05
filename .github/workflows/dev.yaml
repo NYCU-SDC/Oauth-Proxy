@@ -97,7 +97,16 @@ jobs:
             },
             "setup": {
               "inject_secret": {
-                "enable": false
+                "enable": true,
+                "project": "oauth-proxy",
+                "environment": "dev",
+                "secrets": [
+                  {
+                    "path": "/",
+                    "secret_name": "TOKEN",
+                    "env_name": "JWT_PROXY_TOKEN"
+                  }
+                ]
               }
             },
             "post": {

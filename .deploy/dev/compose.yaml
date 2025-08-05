@@ -7,6 +7,7 @@ services:
       - traefik
     environment:
       PORT: "8081"
+      TOKEN: ${JWT_PROXY_TOKEN}
     labels:
       - "vector.enable=true"
       - "traefik.enable=true"
