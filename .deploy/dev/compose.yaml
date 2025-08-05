@@ -1,0 +1,20 @@
+name: oauth-proxy-dev
+
+services:
+  backend:
+    image: yukinamochizuki/sdc-oauth-proxy:dev
+    networks:
+      - traefik
+    environment:
+      PORT: "8081"
+    labels:
+      - "vector.enable=true"
+      - "traefik.enable=true"
+      - "traefik.http.routers.oauth-proxy-dev.rule=Host(`dev.oauth-proxy.sdc.nycu.club`)"
+      - "traefik.http.routers.oauth-proxy-dev.entrypoints=websecure"
+      - "traefik.http.routers.oauth-proxy-dev.tls=true"
+      - "traefik.http.routers.oauth-proxy-dev.tls.certresolver=cloudflare"
+
+networks:
+  traefik:
+    external: true
