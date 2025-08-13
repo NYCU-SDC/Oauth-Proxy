@@ -1,0 +1,14 @@
+type: workspace
+model: workspace
+id: wk_xopsn8JodC
+createdAt: 2025-08-04T17:27:05.775018694
+updatedAt: 2025-08-04T17:27:05.775019797
+authentication: {}
+authenticationType: null
+description: ''
+headers: []
+name: OAuth Proxy
+encryptionKeyChallenge: null
+settingValidateCertificates: true
+settingFollowRedirects: true
+settingRequestTimeout: 0

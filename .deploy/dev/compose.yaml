@@ -1,0 +1,18 @@
+name: oauth-proxy-dev
+
+services:
+  backend:
+    image: yukinamochizuki/sdc-oauth-proxy:dev
+    networks:
+      - traefik
+    environment:
+      PORT: "80"
+      TOKEN: ${JWT_PROXY_TOKEN}
+    labels:
+      - "vector.enable=true"
+      - "traefik.enable=true"
+      - "traefik.http.routers.oauth-proxy-dev.rule=Host(`oauth-proxy.eng.sdc.nycu.club`)"
+
+networks:
+  traefik:
+    external: true
