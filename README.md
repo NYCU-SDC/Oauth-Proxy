@@ -1,23 +1,56 @@
-# OAuth Proxy
+# OAuth Proxy README
 
-This is a simple Go server that acts as a reverse proxy for OAuth callbacks.
+> Public URL: `https://oauth-proxy.eng.sdc.nycu.club/`
 
-## Running the server
+---
 
-To run the server, you need to have Go installed. You can then run the following command in the root of the project:
+## Project Description
 
-```bash
-go run .
+This service provides a shared Google OAuth Proxy for project teams.
+
+Google OAuth requires redirect URIs to be registered in the Google Cloud Console. For short-term snapshots or frequently changing test environments, we cannot add every temporary domain / callback URI to Google’s whitelist, nor do we want to frequently register numerous callback URIs. The purpose of this proxy is:
+
+1. Provide a stable callback URL already registered in the Google whitelist (`https://oauth-proxy.eng.sdc.nycu.club/api/auth/google/callback`).
+2. When Google sends a callback to the proxy, the proxy uses the `state` (JWT) to determine the request and securely forward the result to your final service (`redirect_url`).
+3. Reduce the effort for each project to register and maintain redirect URIs, making development simpler and faster.
+
+**Note**: If your service’s domain (dev/stage/prod) is already whitelisted in Google’s redirect URIs, you do not need to use this proxy.
+
+---
+
+## Usage
+
+1. When performing Google OAuth, your backend should generate a `state` (JWT) and use this proxy’s callback URL (`https://oauth-proxy.eng.sdc.nycu.club/api/auth/google/callback`) as the `redirect_uri` in the Google authorization URL.
+2. The user is directed to Google and completes authentication. Google will return a `code` (or `error`) and the `state` to this service.
+3. Once the proxy receives the callback:
+
+   * It verifies the signature and validity of the `state`.
+   * Depending on the outcome, it redirects the user to the `callback_url`, with query string parameters appended:
+
+     * Success: `https://your.callback.url/path?code=...&state=...`
+     * Failure: `https://your.callback.url/path?error=...`
+
+---
+
+## `state` (JWT) Format
+
+* **Signing Method**: HS256 (HMAC-SHA256), secret key (`STATE_SECRET`) provided by the administrator.
+* **Recommended payload fields (JSON)**:
+
+```json
+{
+  "service": "core system",
+  "environment": "snapshot",
+  "callback_url": "https://app.dev.example.org/auth/google/callback",
+  "redirect_url": "https://app.dev.example.org/",
+  "iss": "sdc-oauth-proxy-client",
+  "sub": "<user-or-session-id>",
+  "exp": 1700000000,
+  "nbf": 1699999700,
+  "iat": 1699999700,
+  "jti": "uuid-xxxx-..."
+}
 ```
 
-This will start the server on port 8080.
-
-## How it works
-
-The server has a single endpoint, `/auth/google/callback`, which is the callback URL for the Google OAuth flow.
-
-When a user is redirected to this endpoint, the server extracts the `state` and `code` from the query parameters.
-
-The `state` parameter is expected to be the URL of the main backend server. The server then redirects the user to this URL, including the `code` and `state` in the query parameters.
-
-This allows the main backend server to handle the OAuth callback, while the proxy server handles the unique URL for each snapshot.
+* `callback_url`: The final internal service URL where the user should be redirected.
+* `iss/sub/exp/nbf/iat/jti`: Fill in according to JWT standards.
